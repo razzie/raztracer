@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -165,12 +166,32 @@ func (pid Process) getEventMsg() (uint, error) {
 
 // GetRegs returns the register values of the process as a slice
 func (pid Process) GetRegs() ([]uint, error) {
+	var pregs syscall.PtraceRegs
+	err := syscall.PtraceGetRegs(int(pid), &pregs)
+	if err != nil {
+		return nil, err
+	}
+
+	val := reflect.ValueOf(pregs)
+	regs := make([]uint, val.NumField())
+	for i := 0; i < len(regs); i++ {
+		regs[i] = uint(val.Field(i).Uint())
+	}
+
 	return nil, nil
 }
 
 // SetRegs sets the registers of the process from the given slice of values
 func (pid Process) SetRegs(regs []uint) error {
-	return nil
+	var pregs syscall.PtraceRegs
+
+	val := reflect.ValueOf(pregs)
+	regs = regs[:val.NumField()]
+	for i := 0; i < len(regs); i++ {
+		val.Field(i).SetUint(uint64(regs[i]))
+	}
+
+	return syscall.PtraceSetRegs(int(pid), &pregs)
 }
 
 // PeekData reads arbitrary length data from the process' memory
