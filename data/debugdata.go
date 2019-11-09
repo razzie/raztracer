@@ -112,3 +112,74 @@ func decompressMaybe(b []byte) ([]byte, error) {
 	}
 	return dbuf, nil
 }
+
+// GetSharedLib returns the debug data that belongs to the shared lib at PC
+func (d *DebugData) GetSharedLib(pc uintptr) (data *DebugData) {
+	for _, lib := range d.libs {
+		if pc > lib.GetStaticBase() {
+			data = lib
+		}
+	}
+
+	return
+}
+
+// GetCompilationUnit returns the CU that belongs to the given PC
+func (d *DebugData) GetCompilationUnit(pc uintptr) (*DebugEntry, error) {
+	if pc > d.staticBase {
+		pc -= d.staticBase
+	}
+
+	reader := d.dwarfData.Reader()
+
+	for cu, _ := reader.Next(); cu != nil; cu, _ = reader.Next() {
+		reader.SkipChildren()
+
+		if cu.Tag != dwarf.TagCompileUnit {
+			continue
+		}
+
+		ranges, err := d.dwarfData.Ranges(cu)
+		if err != nil {
+			return nil, common.Error(err)
+		}
+
+		for _, lowhigh := range ranges {
+			lowpc := uintptr(lowhigh[0])
+			highpc := uintptr(lowhigh[1])
+
+			if lowpc <= pc && highpc > pc {
+				return &DebugEntry{d, cu}, nil
+			}
+		}
+	}
+
+	lib := d.GetSharedLib(pc + d.staticBase)
+	if lib != nil {
+		cu, _ := lib.GetCompilationUnit(pc + d.staticBase)
+		if cu != nil {
+			return cu, nil
+		}
+	}
+
+	return nil, common.Errorf("compilation unit not found for pc: %#x", pc)
+}
+
+// GetLoclistEntry returns the instructions of the matching LocEntry
+func (d *DebugData) GetLoclistEntry(pc uintptr, off int64) ([]byte, error) {
+	if pc > d.staticBase {
+		pc -= d.staticBase
+	}
+
+	cu, err := d.GetCompilationUnit(pc)
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	entry, err := d.loclist.FindEntry(off, pc-cu.LowPC())
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	return entry.instructions, nil
+}
