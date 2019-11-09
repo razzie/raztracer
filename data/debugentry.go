@@ -101,3 +101,8 @@ func (de *DebugEntry) Type() (*DebugEntry, error) {
 	return typ, nil
 }
 
+// Location returns the location of the entry
+func (de *DebugEntry) Location(attr dwarf.Attr, pc uintptr) (*Location, error) {
+	loc, err := NewLocation(de, attr, pc)
+	return loc, common.Error(err)
+}
