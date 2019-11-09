@@ -9,7 +9,7 @@ import (
 func GetDwarfRegs(pid int) (*op.DwarfRegisters, error) {
 	regs, err := Process(pid).GetRegs()
 	if err != nil {
-		return nil, err
+		return nil, Error(err)
 	}
 
 	dregs := &op.DwarfRegisters{

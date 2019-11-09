@@ -17,7 +17,7 @@ type Process int
 func (pid Process) Threads() ([]Process, error) {
 	tasks, err := ioutil.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
 	if err != nil {
-		return nil, fmt.Errorf("Process not found: %d", pid)
+		return nil, Errorf("Process not found: %d", pid)
 	}
 
 	threads := make([]Process, len(tasks))
@@ -36,21 +36,21 @@ func (pid Process) Attach() error {
 	if err == syscall.EPERM {
 		_, err := syscall.PtraceGetEventMsg(int(pid))
 		if err != nil {
-			return err
+			return Error(err)
 		}
 	} else if err != nil {
-		return err
+		return Error(err)
 	}
 
 	pid.simpleWait(time.Second)
 	// we want to try to set these options even if wait failed
 
-	return pid.setOptions(syscall.PTRACE_O_TRACECLONE | syscall.PTRACE_O_TRACEFORK)
+	return Error(pid.setOptions(syscall.PTRACE_O_TRACECLONE | syscall.PTRACE_O_TRACEFORK))
 }
 
 // Detach stops the tracing the process
 func (pid Process) Detach() error {
-	return syscall.PtraceDetach(int(pid))
+	return Error(syscall.PtraceDetach(int(pid)))
 }
 
 // Wait waits for a trace event (signal or breakpoint stop)
@@ -68,7 +68,7 @@ func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (int,
 
 		wpid, err := syscall.Wait4(-int(pgid), status, syscall.WALL|syscall.WUNTRACED|syscall.WNOHANG, nil)
 		if err != nil {
-			return 0, err
+			return 0, Error(err)
 		}
 
 		if wpid <= 0 {
@@ -92,7 +92,7 @@ func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (int,
 				case syscall.PTRACE_EVENT_CLONE, syscall.PTRACE_EVENT_FORK:
 					newpid, err := syscall.PtraceGetEventMsg(wpid)
 					if err != nil {
-						return 0, err
+						return 0, Error(err)
 					}
 					Process(newpid).Attach()
 					Process(newpid).Cont()
@@ -118,14 +118,14 @@ func (pid Process) simpleWait(timeout time.Duration) error {
 	for {
 		select {
 		case <-timer.C:
-			return fmt.Errorf("timeout")
+			return Errorf("timeout")
 
 		default:
 		}
 
 		wpid, err := syscall.Wait4(-int(pgid), nil, syscall.WALL|syscall.WUNTRACED|syscall.WNOHANG, nil)
 		if err != nil {
-			return err
+			return Error(err)
 		}
 
 		if wpid <= 0 {
@@ -141,27 +141,27 @@ func (pid Process) simpleWait(timeout time.Duration) error {
 
 // Cont continues the traced process
 func (pid Process) Cont() error {
-	return pid.ContWithSig(syscall.SIGCONT)
+	return Error(pid.ContWithSig(syscall.SIGCONT))
 }
 
 // ContWithSig continues the traced process and delivers a signal
 func (pid Process) ContWithSig(sig syscall.Signal) error {
-	return syscall.PtraceCont(int(pid), int(sig))
+	return Error(syscall.PtraceCont(int(pid), int(sig)))
 }
 
 // Interrupt interrupts the traced process
 func (pid Process) Interrupt() error {
 	err := syscall.Kill(int(pid), syscall.SIGSTOP)
 	if err != nil {
-		return err
+		return Error(err)
 	}
 
-	return pid.simpleWait(time.Second)
+	return Error(pid.simpleWait(time.Second))
 }
 
 func (pid Process) getEventMsg() (uint, error) {
 	rv, err := syscall.PtraceGetEventMsg(int(pid))
-	return rv, err
+	return rv, Error(err)
 }
 
 // GetRegs returns the register values of the process as a slice
@@ -169,7 +169,7 @@ func (pid Process) GetRegs() ([]uint, error) {
 	var pregs syscall.PtraceRegs
 	err := syscall.PtraceGetRegs(int(pid), &pregs)
 	if err != nil {
-		return nil, err
+		return nil, Error(err)
 	}
 
 	val := reflect.ValueOf(pregs)
@@ -191,19 +191,19 @@ func (pid Process) SetRegs(regs []uint) error {
 		val.Field(i).SetUint(uint64(regs[i]))
 	}
 
-	return syscall.PtraceSetRegs(int(pid), &pregs)
+	return Error(syscall.PtraceSetRegs(int(pid), &pregs))
 }
 
 // PeekData reads arbitrary length data from the process' memory
 func (pid Process) PeekData(addr uintptr, out []byte) error {
 	_, err := syscall.PtracePeekData(int(pid), addr, out)
-	return err
+	return Error(err)
 }
 
 // PokeData writes arbitrary length data to the process' memory
 func (pid Process) PokeData(addr uintptr, data []byte) error {
 	_, err := syscall.PtracePokeData(int(pid), addr, data)
-	return err
+	return Error(err)
 }
 
 // ReadAddressAt reads an address from the pointed location
@@ -211,22 +211,22 @@ func (pid Process) ReadAddressAt(addr uintptr) (uintptr, error) {
 	data := make([]byte, SizeofPtr)
 	err := pid.PeekData(addr, data)
 	if err != nil {
-		return 0, err
+		return 0, Error(err)
 	}
 
 	return ReadAddress(data), nil
 }
 
 func (pid Process) setOptions(options int) error {
-	return syscall.PtraceSetOptions(int(pid), options)
+	return Error(syscall.PtraceSetOptions(int(pid), options))
 }
 
 // SingleStep makes the process execute a single instruction and stop again
 func (pid Process) SingleStep() error {
 	err := syscall.PtraceSingleStep(int(pid))
 	if err != nil {
-		return err
+		return Error(err)
 	}
 
-	return pid.simpleWait(time.Second)
+	return Error(pid.simpleWait(time.Second))
 }

@@ -21,7 +21,7 @@ type MemRegion struct {
 func (pid Process) MemRegions() ([]MemRegion, error) {
 	file, err := os.Open(fmt.Sprintf("/proc/%d/maps", pid))
 	if err != nil {
-		return nil, err
+		return nil, Error(err)
 	}
 	defer file.Close()
 

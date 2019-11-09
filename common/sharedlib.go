@@ -14,7 +14,7 @@ type SharedLibrary struct {
 func (pid Process) SharedLibs() ([]SharedLibrary, error) {
 	regions, err := pid.MemRegions()
 	if err != nil {
-		return nil, err
+		return nil, Error(err)
 	}
 
 	var lastLib string
