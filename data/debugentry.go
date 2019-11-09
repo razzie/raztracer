@@ -18,7 +18,7 @@ func (de *DebugEntry) Val(attr dwarf.Attr) interface{} {
 }
 
 // Name returns the name of the entry
-func (de *DebugEntry) name() string {
+func (de *DebugEntry) Name() string {
 	name, ok := de.Val(dwarf.AttrName).(string)
 	if !ok {
 		return "?"
@@ -79,7 +79,7 @@ func (de *DebugEntry) Children(maxDepth int) ([]DebugEntry, error) {
 
 // Type returns the type entry of this entry
 func (de *DebugEntry) Type() (*DebugEntry, error) {
-	name := de.name()
+	name := de.Name()
 	typeOff, ok := de.Val(dwarf.AttrType).(dwarf.Offset)
 	if !ok {
 		return nil, common.Errorf("%s doesn't have a type", name)
