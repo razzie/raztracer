@@ -12,9 +12,9 @@ import (
 	"path"
 	"strings"
 
-	"github.com/go-delve/delve/pkg/dwarf/frame"
-	"github.com/go-delve/delve/pkg/dwarf/op"
 	"github.com/razzie/raztracer/common"
+	"github.com/razzie/raztracer/custom/frame"
+	"github.com/razzie/raztracer/custom/op"
 )
 
 // DebugData contains debug information of an application or library
@@ -68,9 +68,9 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 		d.loclist = NewLocList(loclistData, d.dwarfEndian)
 	}
 
-	frameData, _, _ := d.GetElfSection("eh_frame")
+	frameData, frameDataOffset, _ := d.GetElfSection("eh_frame")
 	if frameData != nil {
-		d.frameEntries = frame.Parse(frameData, d.dwarfEndian, uint64(staticBase))
+		d.frameEntries = frame.Parse(frameData, d.dwarfEndian, uint64(frameDataOffset), uint64(staticBase))
 	}
 
 	return d, nil

@@ -1,8 +1,8 @@
 package data
 
 import (
-	"github.com/go-delve/delve/pkg/dwarf/frame"
-	"github.com/go-delve/delve/pkg/dwarf/op"
+	"github.com/razzie/raztracer/custom/frame"
+	"github.com/razzie/raztracer/custom/op"
 	"github.com/razzie/raztracer/arch"
 	"github.com/razzie/raztracer/common"
 )
