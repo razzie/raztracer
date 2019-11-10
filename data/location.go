@@ -19,7 +19,7 @@ type Location struct {
 
 // NewLocation returns a new Location
 func NewLocation(de *DebugEntry, attr dwarf.Attr, pc uintptr) (*Location, error) {
-	name := de.name()
+	name := de.Name()
 
 	a := de.Val(attr)
 	if a == nil {
