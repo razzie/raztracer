@@ -2,6 +2,7 @@ package data
 
 import (
 	"debug/dwarf"
+	"fmt"
 
 	"github.com/go-delve/delve/pkg/dwarf/op"
 	"github.com/razzie/raztracer/common"
@@ -10,6 +11,7 @@ import (
 // FunctionEntry contains debug information about a function
 type FunctionEntry struct {
 	entry      DebugEntry
+	variables  []*VariableEntry
 	Name       string
 	HighPC     uintptr
 	LowPC      uintptr
@@ -62,6 +64,65 @@ func NewLibFunctionEntry(name string, low, high, staticBase uintptr) (*FunctionE
 		HighPC:     high,
 		StaticBase: staticBase,
 	}, nil
+}
+
+// GetVariables returns the variables in a function
+func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
+	if fn.entry.data == nil {
+		return nil, nil
+	}
+
+	if fn.variables != nil {
+		return fn.variables, nil
+	}
+
+	children, err := fn.entry.Children(1)
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	vars := make([]*VariableEntry, 0)
+	var cfaOffset uintptr
+	var varCount int
+
+	for _, entry := range children {
+		if len(vars) > 0 && entry.entry.Tag != dwarf.TagFormalParameter {
+			break
+		}
+
+		v, err := NewVariableEntry(entry, fn.StaticBase)
+		if err != nil {
+			fmt.Println(common.Error(err))
+			continue
+		}
+		if v == nil {
+			continue
+		}
+
+		varCount++
+		cfaOffset += uintptr(v.Size)
+
+		// do not add return value
+		isret, _ := v.entry.Val(dwarf.AttrVarParam).(bool)
+		if isret {
+			continue
+		}
+
+		if len(v.Name) == 0 {
+			v.Name = fmt.Sprintf("#%d", varCount)
+		}
+
+		vars = append(vars, v)
+	}
+
+	// calculating cfaOffsets in backwards order
+	for _, v := range vars {
+		cfaOffset -= uintptr(v.Size)
+		v.cfaOffset = cfaOffset
+	}
+
+	fn.variables = vars
+	return vars, nil
 }
 
 // GetFrameBase returns the frame base at PC
