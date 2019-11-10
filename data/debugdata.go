@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/go-delve/delve/pkg/dwarf/frame"
@@ -120,6 +121,52 @@ func decompressMaybe(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	return dbuf, nil
+}
+
+// AddSharedLib loads additional debug data from a shared library
+func (d *DebugData) AddSharedLib(lib common.SharedLibrary) error {
+	file, err := os.Open(lib.Name)
+	if err != nil {
+		return common.Error(err)
+	}
+
+	elfData, err := elf.NewFile(file)
+	if err != nil {
+		return common.Error(err)
+	}
+
+	libname := path.Base(lib.Name)
+	symbols, _ := elfData.Symbols()
+	for _, symbol := range symbols {
+		if symbol.Size == 0 {
+			continue
+		}
+
+		lowpc := uintptr(symbol.Value)
+		highpc := lowpc + uintptr(symbol.Size)
+		fnname := fmt.Sprintf("%s:%s", libname, symbol.Name)
+
+		fn, _ := NewLibFunctionEntry(fnname, lowpc, highpc, lib.StaticBase)
+		d.libFunctions = append(d.libFunctions, fn)
+	}
+
+	data, err := NewDebugData(file, lib.StaticBase)
+	if err != nil {
+		// try loading from secondary source
+
+		file, err := os.Open(lib.Name)
+		if err != nil {
+			return common.Error(err)
+		}
+
+		data, err = NewDebugData(file, lib.StaticBase)
+		if err != nil {
+			return common.Error(err)
+		}
+	}
+
+	d.libs[lib.Name] = data
+	return nil
 }
 
 // GetSharedLib returns the debug data that belongs to the shared lib at PC
