@@ -6,12 +6,59 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
 
 // Process is a wrapper around Linux's ptrace API
 type Process int
+
+// GetRunningProcesses returns the PIDs of running processes
+func GetRunningProcesses() []Process {
+	procdirs, _ := ioutil.ReadDir("/proc")
+	processes := make([]Process, 0, len(procdirs))
+
+	for _, dir := range procdirs {
+		pid, err := strconv.Atoi(dir.Name())
+		if err != nil {
+			continue
+		}
+
+		processes = append(processes, Process(pid))
+	}
+
+	return processes
+}
+
+// GetProcessesByName returns the PIDs of processes with the provided name
+func GetProcessesByName(name string) (results []Process) {
+	for _, pid := range GetRunningProcesses() {
+		procnameRaw, _ := ioutil.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+		procname := strings.TrimSuffix(string(procnameRaw), "\n")
+
+		if string(procname) == name {
+			results = append(results, pid)
+		}
+	}
+	return
+}
+
+// GetProcessByName returns the PID of the process with the provided name
+// or returns an error if the name is ambiguous or not found
+func GetProcessByName(name string) (Process, error) {
+	processes := GetProcessesByName(name)
+	switch len(processes) {
+	case 0:
+		return 0, fmt.Errorf("process not found: %s", name)
+
+	case 1:
+		return processes[0], nil
+
+	default:
+		return 0, fmt.Errorf("there are multiple processes named '%s'", name)
+	}
+}
 
 // Threads return the threads of the process
 func (pid Process) Threads() ([]Process, error) {
