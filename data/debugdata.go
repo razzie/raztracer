@@ -25,6 +25,7 @@ type DebugData struct {
 	entryPoint    uintptr
 	staticBase    uintptr
 	loclist       LocList
+	frameEntries  frame.FrameDescriptionEntries
 	libs          map[string]*DebugData
 	libFunctions  []*FunctionEntry
 	functionCache map[uintptr]*FunctionEntry
@@ -65,6 +66,11 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 	loclistData, _, _ := d.GetElfSection("debug_loc")
 	if loclistData != nil {
 		d.loclist = NewLocList(loclistData, d.dwarfEndian)
+	}
+
+	frameData, _, _ := d.GetElfSection("eh_frame")
+	if frameData != nil {
+		d.frameEntries = frame.Parse(frameData, d.dwarfEndian, uint64(staticBase))
 	}
 
 	return d, nil
@@ -452,4 +458,39 @@ func (d *DebugData) GetGlobals(pc uintptr) ([]*VariableEntry, error) {
 
 	d.globalsCache[pc] = vars
 	return vars, nil
+}
+
+func (d *DebugData) getFDEFromPC(pc uintptr) (fde *frame.FrameDescriptionEntry, err error) {
+	// frame entries already contain the static base
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = common.Errorf("%v", r)
+		}
+	}()
+
+	if d.frameEntries != nil {
+		fde, err := d.frameEntries.FDEForPC(uint64(pc))
+		return fde, common.Error(err)
+	}
+
+	return nil, common.Errorf("FDE not found for pc:%#x", pc)
+}
+
+// GetFrameContextFromPC returns the frame information for the given program counter
+func (d *DebugData) GetFrameContextFromPC(pc uintptr) (framectx *frame.FrameContext, err error) {
+	fde, _ := d.getFDEFromPC(pc)
+	if fde != nil {
+		return fde.EstablishFrame(uint64(pc)), nil
+	}
+
+	lib := d.GetSharedLib(pc)
+	if lib != nil {
+		framectx, _ := lib.GetFrameContextFromPC(pc)
+		if framectx != nil {
+			return framectx, nil
+		}
+	}
+
+	return nil, common.Errorf("frame context not found for pc:%#x", pc)
 }
