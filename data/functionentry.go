@@ -4,7 +4,7 @@ import (
 	"debug/dwarf"
 	"fmt"
 
-	"github.com/razzie/raztracer/custom/op"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/common"
 )
 

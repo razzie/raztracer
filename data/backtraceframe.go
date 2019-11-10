@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/razzie/raztracer/custom/op"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/common"
 )
 

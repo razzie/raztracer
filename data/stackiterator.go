@@ -1,8 +1,8 @@
 package data
 
 import (
-	"github.com/razzie/raztracer/custom/frame"
-	"github.com/razzie/raztracer/custom/op"
+	"github.com/razzie/raztracer/custom/dwarf/frame"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/arch"
 	"github.com/razzie/raztracer/common"
 )
