@@ -101,7 +101,7 @@ func (pid Process) Detach() error {
 }
 
 // Wait waits for a trace event (signal or breakpoint stop)
-func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (int, error) {
+func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (Process, error) {
 	pgid, _ := syscall.Getpgid(int(pid))
 	timer := time.NewTimer(timeout)
 
@@ -134,7 +134,7 @@ func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (int,
 			if sig == syscall.SIGTRAP {
 				switch trapCause {
 				case 0:
-					return wpid, nil
+					return Process(wpid), nil
 
 				case syscall.PTRACE_EVENT_CLONE, syscall.PTRACE_EVENT_FORK:
 					newpid, err := syscall.PtraceGetEventMsg(wpid)
@@ -149,11 +149,11 @@ func (pid Process) Wait(status *syscall.WaitStatus, timeout time.Duration) (int,
 				continue
 			}
 
-			return wpid, nil
+			return Process(wpid), nil
 		}
 
 		if status.Signaled() {
-			return wpid, nil
+			return Process(wpid), nil
 		}
 	}
 }

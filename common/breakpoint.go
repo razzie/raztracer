@@ -18,9 +18,9 @@ type Breakpoint struct {
 }
 
 // NewBreakpoint returns an initialized but disabled breakpoint
-func NewBreakpoint(pid int, addr uintptr) *Breakpoint {
+func NewBreakpoint(pid Process, addr uintptr) *Breakpoint {
 	return &Breakpoint{
-		pid:       Process(pid),
+		pid:       pid,
 		addr:      addr,
 		enabled:   false,
 		savedData: make([]byte, trapInstructionSize)}

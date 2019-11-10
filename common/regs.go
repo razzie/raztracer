@@ -1,13 +1,13 @@
 package common
 
 import (
-	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/arch"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // GetDwarfRegs returns the current register values mapped to dwarf register numbers
-func GetDwarfRegs(pid int) (*op.DwarfRegisters, error) {
-	regs, err := Process(pid).GetRegs()
+func GetDwarfRegs(pid Process) (*op.DwarfRegisters, error) {
+	regs, err := pid.GetRegs()
 	if err != nil {
 		return nil, Error(err)
 	}
