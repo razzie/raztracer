@@ -75,6 +75,10 @@ func (proc *TraceManager) run(errOut chan<- error) {
 		}
 
 		event, err := tracer.WaitForEvent(100 * time.Millisecond)
+		if event == nil && err == nil {
+			continue
+		}
+
 		proc.eventFunc(tracer, event, Error(err))
 
 		if err != nil || (event != nil && event.Signal == syscall.SIGSEGV) {

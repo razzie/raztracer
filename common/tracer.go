@@ -16,9 +16,12 @@ import (
 type TraceEvent struct {
 	Status       syscall.WaitStatus
 	Signal       syscall.Signal
-	TID          Process
+	PID, TID     Process
 	IsBreakpoint bool
 	PC           uintptr
+	Registers    map[string]string
+	Globals      []*data.VariableEntry
+	Backtrace    []*data.BacktraceFrame
 }
 
 // Tracer is used to debug a running process
@@ -411,6 +414,7 @@ func (t *Tracer) WaitForEvent(timeout time.Duration) (*TraceEvent, error) {
 	t.deliverSignal = syscall.SIGCONT
 	t.tid = wpid // important to set t.tid before reading PC
 
+	evt.PID = t.pid
 	evt.TID = wpid
 	evt.PC, err = t.GetPC()
 	if err != nil {
@@ -435,6 +439,21 @@ func (t *Tracer) WaitForEvent(timeout time.Duration) (*TraceEvent, error) {
 		}
 	} else {
 		t.deliverSignal = evt.Signal
+	}
+
+	evt.Registers, err = t.GetRegisters()
+	if err != nil {
+		return evt, Error(err)
+	}
+
+	evt.Backtrace, err = t.GetBacktrace(8)
+	if err != nil {
+		return evt, Error(err)
+	}
+
+	evt.Globals, err = t.GetGlobals(evt.PC)
+	if err != nil {
+		return evt, Error(err)
 	}
 
 	return evt, nil
