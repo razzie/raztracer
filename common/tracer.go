@@ -24,7 +24,7 @@ type TraceEvent struct {
 	Backtrace    []*data.BacktraceFrame
 }
 
-// Tracer is used to debug a running process
+// Tracer is used to trace a running process
 type Tracer struct {
 	progName      string
 	pid, tid      Process
@@ -68,9 +68,14 @@ func NewTracer(pid int) (*Tracer, error) {
 	return t, t.Attach()
 }
 
-// GetProgName returns the basename of the process being debugged
+// GetProgName returns the basename of the process being traced
 func (t *Tracer) GetProgName() string {
 	return t.progName
+}
+
+// GetDebugData returns the debug data of the traced process
+func (t *Tracer) GetDebugData() *data.DebugData {
+	return t.debugData
 }
 
 // Attach attaches the Tracer to the running process
@@ -271,30 +276,17 @@ func (t *Tracer) RemoveBreakpoint(addr uintptr) error {
 }
 
 // SetBreakpointAtFunction sets a breakpoint at the given function
-func (t *Tracer) SetBreakpointAtFunction(name string) ([]uintptr, error) {
-	addresses := t.debugData.GetFunctionAddresses(name, true)
+func (t *Tracer) SetBreakpointAtFunction(name string, exact bool) ([]uintptr, error) {
+	addresses := t.debugData.GetFunctionAddresses(name, exact)
 
 	if len(addresses) == 0 {
-		addresses = t.debugData.GetFunctionAddresses(name, false)
+		return nil, Errorf("function not found: %s", name)
 	}
 
-	switch len(addresses) {
-	case 0:
-		return nil, Errorf("function not found: %s", name)
-
-	case 1:
-		err := t.SetBreakpointAtAddress(addresses[0])
+	for i, addr := range addresses {
+		err := t.SetBreakpointAtAddress(addr)
 		if err != nil {
-			return nil, Error(err)
-		}
-		return addresses, nil
-
-	default:
-		for i, addr := range addresses {
-			err := t.SetBreakpointAtAddress(addr)
-			if err != nil {
-				return addresses[:i-1], Error(err)
-			}
+			return addresses[:i], Error(err)
 		}
 	}
 
@@ -396,7 +388,7 @@ func (t *Tracer) Interrupt() error {
 	return nil
 }
 
-// WaitForEvent blocks until a debug event happens, then returns it
+// WaitForEvent blocks until a trace event happens, then returns it
 func (t *Tracer) WaitForEvent(timeout time.Duration) (*TraceEvent, error) {
 	err := t.continueExecution()
 	if err != nil {

@@ -95,7 +95,7 @@ func (proc *TraceManager) run(errOut chan<- error) {
 // HandleRequest is a blocking call to the provided function in the tracer's thread
 func (proc *TraceManager) HandleRequest(fn func(*Tracer) error) error {
 	if proc.tracer == nil {
-		return fmt.Errorf("the inner debugger is already detached")
+		return fmt.Errorf("the inner tracer is already detached")
 	}
 
 	req := traceRequest{
