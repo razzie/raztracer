@@ -14,14 +14,15 @@ import (
 
 // TraceEvent is received when a breakpoint is hit or the process receives a signal
 type TraceEvent struct {
-	Status       syscall.WaitStatus
-	Signal       syscall.Signal
-	PID, TID     Process
-	IsBreakpoint bool
-	PC           uintptr
-	Registers    map[string]string
-	Globals      []*data.VariableEntry
-	Backtrace    []*data.BacktraceFrame
+	Status       syscall.WaitStatus     `json:"-"`
+	Signal       syscall.Signal         `json:"signal"`
+	PID          Process                `json:"pid"`
+	TID          Process                `json:"tid"`
+	IsBreakpoint bool                   `json:"breakpoint"`
+	PC           uintptr                `json:"pc"`
+	Registers    map[string]string      `json:"regs"`
+	Globals      []*data.VariableEntry  `json:"globals"`
+	Backtrace    []*data.BacktraceFrame `json:"backtrace"`
 }
 
 // Tracer is used to trace a running process
