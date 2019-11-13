@@ -1,10 +1,10 @@
 package data
 
 import (
-	"github.com/razzie/raztracer/custom/dwarf/frame"
-	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/arch"
 	"github.com/razzie/raztracer/common"
+	"github.com/razzie/raztracer/custom/dwarf/frame"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // StackIterator iterates over stack frames
@@ -19,7 +19,7 @@ type StackIterator struct {
 }
 
 // NewStackIterator returns a new StackIterator
-func NewStackIterator(pid int, data *DebugData) (*StackIterator, error) {
+func NewStackIterator(pid common.Process, data *DebugData) (*StackIterator, error) {
 	regs, err := common.GetDwarfRegs(pid)
 	if err != nil {
 		return nil, common.Error(err)
@@ -29,7 +29,7 @@ func NewStackIterator(pid int, data *DebugData) (*StackIterator, error) {
 	pc := uintptr(regs.PC())
 
 	stack := &StackIterator{
-		proc:    common.Process(pid),
+		proc:    pid,
 		retaddr: pc,
 		regs:    regs,
 		data:    data}

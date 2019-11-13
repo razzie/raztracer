@@ -202,7 +202,7 @@ func (t *Tracer) ReadMemory(addr uintptr, out []byte) error {
 // GetBacktrace gets the list of backtrace frames of the process
 func (t *Tracer) GetBacktrace(maxFrames int) ([]*data.BacktraceFrame, error) {
 	frames := make([]*data.BacktraceFrame, 0)
-	stack, err := data.NewStackIterator(int(t.tid), t.debugData)
+	stack, err := data.NewStackIterator(t.tid, t.debugData)
 	if err != nil {
 		return frames, Error(err)
 	}
