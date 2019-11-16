@@ -2,6 +2,7 @@ package data
 
 import (
 	"debug/dwarf"
+	"debug/elf"
 	"fmt"
 
 	"github.com/razzie/raztracer/common"
@@ -10,76 +11,50 @@ import (
 
 // FunctionEntry contains debug information about a function
 type FunctionEntry struct {
-	entry      DebugEntry
-	variables  []*VariableEntry
-	Name       string
-	HighPC     uintptr
-	LowPC      uintptr
-	StaticBase uintptr
+	entry             DebugEntry
+	variables         []*VariableEntry
+	globals           []*VariableEntry
+	Name              string
+	HighPC            uintptr
+	LowPC             uintptr
+	StaticBase        uintptr
+	BreakpointAddress uintptr
+	Lib               *common.SharedLibrary
 }
 
 // NewFunctionEntry returns a new FunctionEntry
-func NewFunctionEntry(de DebugEntry, staticBase uintptr) (*FunctionEntry, error) {
+func NewFunctionEntry(de DebugEntry) (*FunctionEntry, error) {
 	name := de.Name()
 
 	if de.entry.Tag != dwarf.TagSubprogram {
 		return nil, common.Errorf("%s is not a function entry", name)
 	}
 
-	return &FunctionEntry{
+	fn := &FunctionEntry{
 		entry:      de,
 		Name:       name,
 		HighPC:     de.HighPC(),
 		LowPC:      de.LowPC(),
-		StaticBase: staticBase,
-	}, nil
-}
-
-// NewFunctionEntryFromPC returns a new FunctionEntry from program counter
-func NewFunctionEntryFromPC(pc uintptr, data *DebugData) (*FunctionEntry, error) {
-	reader := data.dwarfData.Reader()
-
-	for entry, err := reader.Next(); entry != nil; entry, err = reader.Next() {
-		if err != nil {
-			return nil, common.Error(err)
-		}
-
-		if entry.Tag != dwarf.TagSubprogram {
-			continue
-		}
-
-		ranges, err := data.dwarfData.Ranges(entry)
-		if err != nil {
-			return nil, common.Error(err)
-		}
-
-		for _, lowhigh := range ranges {
-			lowpc := uintptr(lowhigh[0])
-			highpc := uintptr(lowhigh[1])
-			de := DebugEntry{data, entry}
-
-			if lowpc <= pc && highpc > pc {
-				return &FunctionEntry{
-					entry:      de,
-					Name:       de.Name(),
-					HighPC:     highpc,
-					LowPC:      lowpc,
-					StaticBase: data.staticBase,
-				}, nil
-			}
-		}
+		StaticBase: de.data.staticBase,
 	}
 
-	return nil, common.Errorf("the entry is not a function at pc: %#x", pc)
+	fn.BreakpointAddress, _ = fn.getBreakpointAddress()
+
+	return fn, nil
 }
 
 // NewLibFunctionEntry returns a dummy FunctionEntry for a library function
-func NewLibFunctionEntry(name string, low, high, staticBase uintptr) (*FunctionEntry, error) {
+func NewLibFunctionEntry(lib *common.SharedLibrary, symbol elf.Symbol) (*FunctionEntry, error) {
+	lowpc := uintptr(symbol.Value)
+	highpc := lowpc + uintptr(symbol.Size)
+
 	return &FunctionEntry{
-		Name:       name,
-		LowPC:      low,
-		HighPC:     high,
-		StaticBase: staticBase,
+		Name:              symbol.Name,
+		LowPC:             lowpc,
+		HighPC:            highpc,
+		StaticBase:        lib.StaticBase,
+		BreakpointAddress: lowpc,
+		Lib:               lib,
 	}, nil
 }
 
@@ -107,7 +82,7 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 			break
 		}
 
-		v, err := NewVariableEntry(entry, fn.StaticBase)
+		v, err := NewVariableEntry(entry)
 		if err != nil {
 			fmt.Println(common.Error(err))
 			continue
@@ -159,4 +134,23 @@ func (fn *FunctionEntry) GetFrameBase(pc uintptr, regs *op.DwarfRegisters) (uint
 
 	err = loc.parse(regs)
 	return loc.address, common.Error(err)
+}
+
+func (fn *FunctionEntry) getBreakpointAddress() (uintptr, error) {
+	line, err := NewLineEntry(fn.LowPC, fn.entry.data)
+	if err != nil {
+		return fn.LowPC, common.Error(err)
+	}
+
+	for line, err = line.Next(); line != nil; line, err = line.Next() {
+		if err != nil {
+			return fn.LowPC, common.Error(err)
+		}
+
+		if line.IsStmt {
+			return line.Address, nil
+		}
+	}
+
+	return fn.LowPC, common.Errorf("no suitable breakpoint location for %#x", fn.LowPC)
 }

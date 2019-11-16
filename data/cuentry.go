@@ -14,11 +14,13 @@ type CUEntry struct {
 	functions  []*FunctionEntry
 	globals    []*VariableEntry
 	Ranges     [][2]uintptr
+	LowPC      uintptr
+	HighPC     uintptr
 	StaticBase uintptr
 }
 
 // NewCUEntry returns a new CUEntry
-func NewCUEntry(de DebugEntry, staticBase uintptr) (*CUEntry, error) {
+func NewCUEntry(de DebugEntry) (*CUEntry, error) {
 	if de.entry.Tag != dwarf.TagCompileUnit {
 		return nil, common.Errorf("%s is not a compilation unit", de.Name())
 	}
@@ -35,15 +37,17 @@ func NewCUEntry(de DebugEntry, staticBase uintptr) (*CUEntry, error) {
 	return &CUEntry{
 		entry:      de,
 		Ranges:     ranges,
-		StaticBase: staticBase,
+		LowPC:      de.LowPC(),
+		HighPC:     de.HighPC(),
+		StaticBase: de.data.staticBase,
 	}, nil
 }
 
 // ContainsPC returns whether this compilation unit covers the given program counter
 func (cu *CUEntry) ContainsPC(pc uintptr) bool {
 	for _, lowhigh := range cu.Ranges {
-		lowpc := lowhigh[0]
-		highpc := lowhigh[1]
+		lowpc := lowhigh[0] + cu.StaticBase
+		highpc := lowhigh[1] + cu.StaticBase
 		if pc >= lowpc && pc < highpc {
 			return true
 		}
@@ -61,8 +65,8 @@ func (cu *CUEntry) FindEntry(pc uintptr) (*DebugEntry, error) {
 	for _, entry := range children {
 		ranges, _ := entry.Ranges()
 		for _, lowhigh := range ranges {
-			lowpc := lowhigh[0]
-			highpc := lowhigh[1]
+			lowpc := lowhigh[0] + cu.StaticBase
+			highpc := lowhigh[1] + cu.StaticBase
 			if pc >= lowpc && pc < highpc {
 				return &entry, nil
 			}
@@ -95,7 +99,7 @@ func (cu *CUEntry) GetFunctions() ([]*FunctionEntry, error) {
 			continue
 		}
 
-		f, err := NewFunctionEntry(de, cu.StaticBase)
+		f, err := NewFunctionEntry(de)
 		if err != nil {
 			fmt.Println(common.Error(err))
 			continue
@@ -142,7 +146,7 @@ func (cu *CUEntry) GetGlobals() ([]*VariableEntry, error) {
 			continue
 		}
 
-		v, err := NewVariableEntry(de, cu.StaticBase)
+		v, err := NewVariableEntry(de)
 		if err != nil {
 			fmt.Println(common.Error(err))
 			continue

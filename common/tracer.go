@@ -221,12 +221,9 @@ func (t *Tracer) GetBacktrace(maxFrames int) ([]*data.BacktraceFrame, error) {
 	return frames, Error(stack.Err())
 }
 
-// GetGlobals returns the list of global variables in the compilation unit of PC
-func (t *Tracer) GetGlobals(pc uintptr) ([]*data.VariableEntry, error) {
-	vars, err := t.debugData.GetGlobals(pc)
-	if err != nil {
-		return nil, Error(err)
-	}
+// GetGlobals returns the list of global variables
+func (t *Tracer) GetGlobals() ([]*data.VariableEntry, error) {
+	vars := t.debugData.GetGlobals()
 
 	regs, err := GetDwarfRegs(t.tid)
 	if err != nil {
@@ -234,7 +231,7 @@ func (t *Tracer) GetGlobals(pc uintptr) ([]*data.VariableEntry, error) {
 	}
 
 	for _, v := range vars {
-		v.ReadValue(int(t.tid), pc, regs)
+		v.ReadValue(int(t.tid), 0, regs)
 	}
 
 	return vars, nil
@@ -444,7 +441,7 @@ func (t *Tracer) WaitForEvent(timeout time.Duration) (*TraceEvent, error) {
 		return evt, Error(err)
 	}
 
-	evt.Globals, err = t.GetGlobals(evt.PC)
+	evt.Globals, err = t.GetGlobals()
 	if err != nil {
 		return evt, Error(err)
 	}

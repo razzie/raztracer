@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/common"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // VariableEntry contains debug information about a variable
@@ -26,7 +26,7 @@ type VariableEntry struct {
 }
 
 // NewVariableEntry returns a new VariableEntry
-func NewVariableEntry(de DebugEntry, staticBase uintptr) (*VariableEntry, error) {
+func NewVariableEntry(de DebugEntry) (*VariableEntry, error) {
 	if de.entry.Tag != dwarf.TagVariable && de.entry.Tag != dwarf.TagFormalParameter {
 		return nil, nil
 	}
@@ -66,7 +66,7 @@ func NewVariableEntry(de DebugEntry, staticBase uintptr) (*VariableEntry, error)
 
 	return &VariableEntry{
 		entry:      de,
-		staticBase: staticBase,
+		staticBase: de.data.staticBase,
 		isPtr:      isPtr,
 		Name:       name,
 		Type:       typeName,

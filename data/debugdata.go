@@ -9,12 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/razzie/raztracer/common"
 	"github.com/razzie/raztracer/custom/dwarf/frame"
-	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // DebugData contains debug information of an application or library
@@ -25,11 +23,11 @@ type DebugData struct {
 	entryPoint    uintptr
 	staticBase    uintptr
 	loclist       LocList
-	frameEntries  frame.FrameDescriptionEntries
-	libs          map[string]*DebugData
-	libFunctions  []*FunctionEntry
+	frameEntries  []frame.FrameDescriptionEntries
+	compUnits     []*CUEntry
+	functions     []*FunctionEntry
 	functionCache map[uintptr]*FunctionEntry
-	globalsCache  map[uintptr][]*VariableEntry
+	globals       []*VariableEntry
 }
 
 // NewDebugData returns a new DebugData instance
@@ -52,25 +50,66 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 		dwarfEndian:   common.ByteOrder,
 		entryPoint:    entryPoint,
 		staticBase:    staticBase,
-		libs:          make(map[string]*DebugData),
-		libFunctions:  make([]*FunctionEntry, 0),
 		functionCache: make(map[uintptr]*FunctionEntry),
-		globalsCache:  make(map[uintptr][]*VariableEntry),
 	}
 
+	// determining dwarf endianness
 	debugInfoData, _, _ := d.GetElfSection("debug_info")
 	if debugInfoData != nil {
 		d.dwarfEndian = frame.DwarfEndian(debugInfoData)
 	}
 
+	// reading location list data
 	loclistData, _, _ := d.GetElfSection("debug_loc")
 	if loclistData != nil {
 		d.loclist = NewLocList(loclistData, d.dwarfEndian)
 	}
 
+	// reading frame data
 	frameData, frameDataOffset, _ := d.GetElfSection("eh_frame")
 	if frameData != nil {
-		d.frameEntries = frame.Parse(frameData, d.dwarfEndian, uint64(frameDataOffset), uint64(staticBase))
+		frameEntries := frame.Parse(frameData, d.dwarfEndian, uint64(frameDataOffset), uint64(staticBase))
+		d.frameEntries = []frame.FrameDescriptionEntries{frameEntries}
+	}
+
+	// getting the list of compilation unit entries
+	reader := dwarfData.Reader()
+	for cu, _ := reader.Next(); cu != nil; cu, _ = reader.Next() {
+		reader.SkipChildren()
+
+		if cu.Tag != dwarf.TagCompileUnit {
+			continue
+		}
+
+		cuEntry, err := NewCUEntry(DebugEntry{d, cu})
+		if err != nil {
+			fmt.Println(common.Error(err))
+			continue
+		}
+
+		d.compUnits = append(d.compUnits, cuEntry)
+	}
+
+	// getting the list of function entries
+	for _, cu := range d.compUnits {
+		funcs, err := cu.GetFunctions()
+		if err != nil {
+			fmt.Println(common.Error(err))
+			continue
+		}
+
+		d.functions = append(d.functions, funcs...)
+	}
+
+	// getting the list of global variable entries
+	for _, cu := range d.compUnits {
+		globals, err := cu.GetGlobals()
+		if err != nil {
+			fmt.Println(common.Error(err))
+			continue
+		}
+
+		d.globals = append(d.globals, globals...)
 	}
 
 	return d, nil
@@ -136,79 +175,34 @@ func (d *DebugData) AddSharedLib(lib common.SharedLibrary) error {
 		return common.Error(err)
 	}
 
+	data, _ := NewDebugData(file, lib.StaticBase)
+	if data != nil {
+		d.functions = append(d.functions, data.functions...)
+		return nil
+	}
+
 	elfData, err := elf.NewFile(file)
 	if err != nil {
 		return common.Error(err)
 	}
 
-	libname := path.Base(lib.Name)
 	symbols, _ := elfData.Symbols()
 	for _, symbol := range symbols {
 		if symbol.Size == 0 {
 			continue
 		}
 
-		lowpc := uintptr(symbol.Value)
-		highpc := lowpc + uintptr(symbol.Size)
-		fnname := fmt.Sprintf("%s:%s", libname, symbol.Name)
-
-		fn, _ := NewLibFunctionEntry(fnname, lowpc, highpc, lib.StaticBase)
-		d.libFunctions = append(d.libFunctions, fn)
-	}
-
-	data, _ := NewDebugData(file, lib.StaticBase)
-	if data != nil {
-		d.libs[lib.Name] = data
+		fn, _ := NewLibFunctionEntry(&lib, symbol)
+		d.functions = append(d.functions, fn)
 	}
 
 	return nil
 }
 
-// GetSharedLib returns the debug data that belongs to the shared lib at PC
-func (d *DebugData) GetSharedLib(pc uintptr) (data *DebugData) {
-	for _, lib := range d.libs {
-		if pc > lib.GetStaticBase() && (data == nil || data.GetStaticBase() < lib.GetStaticBase()) {
-			data = lib
-		}
-	}
-
-	return
-}
-
 // GetCompilationUnit returns the CU that belongs to the given PC
-func (d *DebugData) GetCompilationUnit(pc uintptr) (*DebugEntry, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
-	reader := d.dwarfData.Reader()
-
-	for cu, _ := reader.Next(); cu != nil; cu, _ = reader.Next() {
-		reader.SkipChildren()
-
-		if cu.Tag != dwarf.TagCompileUnit {
-			continue
-		}
-
-		ranges, err := d.dwarfData.Ranges(cu)
-		if err != nil {
-			return nil, common.Error(err)
-		}
-
-		for _, lowhigh := range ranges {
-			lowpc := uintptr(lowhigh[0])
-			highpc := uintptr(lowhigh[1])
-
-			if lowpc <= pc && highpc > pc {
-				return &DebugEntry{d, cu}, nil
-			}
-		}
-	}
-
-	lib := d.GetSharedLib(pc + d.staticBase)
-	if lib != nil {
-		cu, _ := lib.GetCompilationUnit(pc + d.staticBase)
-		if cu != nil {
+func (d *DebugData) GetCompilationUnit(pc uintptr) (*CUEntry, error) {
+	for _, cu := range d.compUnits {
+		if cu.ContainsPC(pc) {
 			return cu, nil
 		}
 	}
@@ -218,16 +212,12 @@ func (d *DebugData) GetCompilationUnit(pc uintptr) (*DebugEntry, error) {
 
 // GetLoclistEntry returns the instructions of the matching LocEntry
 func (d *DebugData) GetLoclistEntry(pc uintptr, off int64) ([]byte, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
 	cu, err := d.GetCompilationUnit(pc)
 	if err != nil {
 		return nil, common.Error(err)
 	}
 
-	entry, err := d.loclist.FindEntry(off, pc-cu.LowPC())
+	entry, err := d.loclist.FindEntry(off, pc-cu.LowPC-cu.StaticBase)
 	if err != nil {
 		return nil, common.Error(err)
 	}
@@ -235,218 +225,46 @@ func (d *DebugData) GetLoclistEntry(pc uintptr, off int64) ([]byte, error) {
 	return entry.instructions, nil
 }
 
-// GetFunctionAddresses returns the addresses of the functions matching 'name'
-func (d *DebugData) GetFunctionAddresses(name string, exact bool) []uintptr {
-	addresses := make([]uintptr, 0)
-	symbols, _ := d.elfData.Symbols()
-
-	for _, symbol := range symbols {
-		if symbol.Size == 0 {
-			continue
-		}
-
+// GetFunctionsByName returns function entries by name
+func (d *DebugData) GetFunctionsByName(name string, exact bool) (results []*FunctionEntry) {
+	for _, fn := range d.functions {
 		if exact {
-			if symbol.Name != name {
+			if fn.Name != name {
 				continue
 			}
 		} else {
-			if !strings.Contains(symbol.Name, name) {
+			if !strings.Contains(fn.Name, name) {
 				continue
 			}
 		}
 
-		pc := uintptr(symbol.Value)
-
-		if fn, _ := NewFunctionEntryFromPC(pc, d); fn == nil {
-			continue
-		}
-
-		addr, err := d.getFunctionBreakpointAddress(pc)
-		if err != nil {
-			fmt.Println(common.Error(err))
-			//continue
-		}
-
-		addresses = append(addresses, addr)
+		results = append(results, fn)
 	}
-
-	for _, lib := range d.libs {
-		addresses = append(addresses, lib.GetFunctionAddresses(name, exact)...)
-	}
-
-	return addresses
-}
-
-func (d *DebugData) getFunctionBreakpointAddress(pc uintptr) (uintptr, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
-	line, err := d.GetLineEntryFromPC(pc)
-	if err != nil {
-		return pc + d.staticBase, common.Error(err)
-	}
-
-	for line, err = line.Next(); line != nil; line, err = line.Next() {
-		if err != nil {
-			return pc + d.staticBase, common.Error(err)
-		}
-
-		if line.IsStmt {
-			return line.Address + d.staticBase, nil
-		}
-	}
-
-	return pc + d.staticBase, common.Errorf("no suitable breakpoint location for %#x", pc+d.staticBase)
-}
-
-// GetLineEntryFromPC returns the line entry at the given program counter
-func (d *DebugData) GetLineEntryFromPC(pc uintptr) (*LineEntry, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
-	reader := d.dwarfData.Reader()
-	cu, err := reader.SeekPC(uint64(pc))
-	if err != nil {
-		return nil, common.Error(err)
-	}
-
-	lineReader, err := d.dwarfData.LineReader(cu)
-	if err != nil {
-		return nil, common.Error(err)
-	}
-
-	entry, err := NewLineEntry(pc, lineReader)
-	if err != nil {
-		lib := d.GetSharedLib(pc + d.staticBase)
-		if lib != nil {
-			entry, err := lib.GetLineEntryFromPC(pc)
-			return entry, common.Error(err)
-		}
-
-		return nil, common.Error(err)
-	}
-
-	entry.Address += d.staticBase
-	return entry, nil
+	return
 }
 
 // GetFunctionFromPC returns the function entry at the given program counter
 func (d *DebugData) GetFunctionFromPC(pc uintptr) (*FunctionEntry, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
 	cached, found := d.functionCache[pc]
 	if found {
 		return cached, nil
 	}
 
-	fn, err := NewFunctionEntryFromPC(pc, d)
-	if err != nil {
-		fn, _ = d.getLibFunctionFromPC(pc)
-		if fn == nil {
-			return nil, common.Error(err)
-		}
-	}
-
-	d.functionCache[pc] = fn
-	return fn, nil
-}
-
-func (d *DebugData) getLibFunctionFromPC(pc uintptr) (*FunctionEntry, error) {
-	lib := d.GetSharedLib(pc)
-	if lib != nil {
-		fn, err := lib.GetFunctionFromPC(pc)
-		if err != nil {
-			return nil, common.Error(err)
-		}
-
-		return fn, nil
-	}
-
-	for _, fn := range d.libFunctions {
-		low := fn.LowPC + fn.StaticBase
-		high := fn.HighPC + fn.StaticBase
-
-		if pc >= low && pc < high {
+	for _, fn := range d.functions {
+		lowpc := fn.LowPC + fn.StaticBase
+		highpc := fn.HighPC + fn.HighPC
+		if pc >= lowpc && pc < highpc {
+			d.functionCache[pc] = fn
 			return fn, nil
 		}
 	}
 
-	return nil, common.Errorf("library function not found for %#x", pc)
+	return nil, common.Errorf("function not found for pc:%#x", pc)
 }
 
-// GetGlobals returns the list of global variables in the compilation unit of PC
-func (d *DebugData) GetGlobals(pc uintptr) ([]*VariableEntry, error) {
-	if pc > d.staticBase {
-		pc -= d.staticBase
-	}
-
-	cached, found := d.globalsCache[pc]
-	if found {
-		return cached, nil
-	}
-
-	reader := d.dwarfData.Reader()
-	cu, err := reader.SeekPC(uint64(pc))
-	if err != nil {
-		lib := d.GetSharedLib(pc + d.staticBase)
-		if lib != nil {
-			globals, err := lib.GetGlobals(pc + d.staticBase)
-			if err == nil {
-				d.globalsCache[pc] = globals
-				return globals, nil
-			}
-		}
-
-		return nil, common.Error(err)
-	}
-
-	cuEntry := DebugEntry{d, cu}
-	children, err := cuEntry.Children(-1)
-	if err != nil {
-		return nil, common.Error(err)
-	}
-
-	vars := make([]*VariableEntry, 0)
-
-	for _, de := range children {
-		if de.entry.Tag != dwarf.TagVariable {
-			continue
-		}
-
-		_, hasName := de.Val(dwarf.AttrName).(string)
-		if !hasName {
-			continue
-		}
-
-		loc, _ := de.Location(dwarf.AttrLocation, pc)
-		if loc != nil && len(loc.instructions) > 0 {
-			firstOp := op.Opcode(loc.instructions[0])
-			if firstOp != op.DW_OP_addr {
-				continue
-			}
-		} else {
-			continue
-		}
-
-		v, err := NewVariableEntry(de, d.staticBase)
-		if err != nil {
-			fmt.Println(common.Error(err))
-			continue
-		}
-
-		if v == nil || v.Size == 0 {
-			continue
-		}
-
-		vars = append(vars, v)
-	}
-
-	d.globalsCache[pc] = vars
-	return vars, nil
+// GetGlobals returns the list of global variables
+func (d *DebugData) GetGlobals() []*VariableEntry {
+	return d.globals
 }
 
 func (d *DebugData) getFDEFromPC(pc uintptr) (fde *frame.FrameDescriptionEntry, err error) {
@@ -458,9 +276,11 @@ func (d *DebugData) getFDEFromPC(pc uintptr) (fde *frame.FrameDescriptionEntry, 
 		}
 	}()
 
-	if d.frameEntries != nil {
-		fde, err := d.frameEntries.FDEForPC(uint64(pc))
-		return fde, common.Error(err)
+	for _, frameEntries := range d.frameEntries {
+		fde, _ := frameEntries.FDEForPC(uint64(pc))
+		if fde != nil {
+			return fde, nil
+		}
 	}
 
 	return nil, common.Errorf("FDE not found for pc:%#x", pc)
@@ -471,14 +291,6 @@ func (d *DebugData) GetFrameContextFromPC(pc uintptr) (framectx *frame.FrameCont
 	fde, _ := d.getFDEFromPC(pc)
 	if fde != nil {
 		return fde.EstablishFrame(uint64(pc)), nil
-	}
-
-	lib := d.GetSharedLib(pc)
-	if lib != nil {
-		framectx, _ := lib.GetFrameContextFromPC(pc)
-		if framectx != nil {
-			return framectx, nil
-		}
 	}
 
 	return nil, common.Errorf("frame context not found for pc:%#x", pc)

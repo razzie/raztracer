@@ -5,8 +5,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/common"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // BacktraceFrame contains the name and variables of a function in the backtrace
@@ -35,7 +35,7 @@ func NewBacktraceFrame(pid int, fn *FunctionEntry, pc uintptr, regs *op.DwarfReg
 	position := fmt.Sprintf("%#x", pc)
 
 	if debugData != nil {
-		lineEntry, _ := debugData.GetLineEntryFromPC(pc)
+		lineEntry, _ := NewLineEntry(pc, debugData)
 		if lineEntry != nil {
 			filename := path.Base(lineEntry.Filename)
 			position += fmt.Sprintf(" %s:%d", filename, lineEntry.Line)

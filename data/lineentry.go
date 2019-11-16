@@ -18,17 +18,29 @@ type LineEntry struct {
 }
 
 // NewLineEntry returns a new LineEntry
-func NewLineEntry(pc uintptr, reader *dwarf.LineReader) (*LineEntry, error) {
+// pc must not include the static base
+func NewLineEntry(pc uintptr, data *DebugData) (*LineEntry, error) {
 	var entry dwarf.LineEntry
 
-	err := reader.SeekPC(uint64(pc), &entry)
+	reader := data.dwarfData.Reader()
+	cu, err := reader.SeekPC(uint64(pc))
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	lineReader, err := data.dwarfData.LineReader(cu)
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	err = lineReader.SeekPC(uint64(pc), &entry)
 	if err != nil {
 		return nil, common.Errorf("line entry not found for pc: %#x", pc)
 	}
 
 	return &LineEntry{
-		reader:   reader,
-		pos:      reader.Tell(),
+		reader:   lineReader,
+		pos:      lineReader.Tell(),
 		Filename: entry.File.Name,
 		Address:  uintptr(entry.Address),
 		IsStmt:   entry.IsStmt,
