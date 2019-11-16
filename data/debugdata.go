@@ -156,29 +156,18 @@ func (d *DebugData) AddSharedLib(lib common.SharedLibrary) error {
 		d.libFunctions = append(d.libFunctions, fn)
 	}
 
-	data, err := NewDebugData(file, lib.StaticBase)
-	if err != nil {
-		// try loading from secondary source
-
-		file, err := os.Open(lib.Name)
-		if err != nil {
-			return common.Error(err)
-		}
-
-		data, err = NewDebugData(file, lib.StaticBase)
-		if err != nil {
-			return common.Error(err)
-		}
+	data, _ := NewDebugData(file, lib.StaticBase)
+	if data != nil {
+		d.libs[lib.Name] = data
 	}
 
-	d.libs[lib.Name] = data
 	return nil
 }
 
 // GetSharedLib returns the debug data that belongs to the shared lib at PC
 func (d *DebugData) GetSharedLib(pc uintptr) (data *DebugData) {
 	for _, lib := range d.libs {
-		if pc > lib.GetStaticBase() {
+		if pc > lib.GetStaticBase() && (data == nil || data.GetStaticBase() < lib.GetStaticBase()) {
 			data = lib
 		}
 	}
@@ -268,7 +257,7 @@ func (d *DebugData) GetFunctionAddresses(name string, exact bool) []uintptr {
 
 		pc := uintptr(symbol.Value)
 
-		if fn, _ := NewFunctionEntry(pc, d); fn == nil {
+		if fn, _ := NewFunctionEntryFromPC(pc, d); fn == nil {
 			continue
 		}
 
@@ -354,7 +343,7 @@ func (d *DebugData) GetFunctionFromPC(pc uintptr) (*FunctionEntry, error) {
 		return cached, nil
 	}
 
-	fn, err := NewFunctionEntry(pc, d)
+	fn, err := NewFunctionEntryFromPC(pc, d)
 	if err != nil {
 		fn, _ = d.getLibFunctionFromPC(pc)
 		if fn == nil {

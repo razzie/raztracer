@@ -4,8 +4,8 @@ import (
 	"debug/dwarf"
 	"fmt"
 
-	"github.com/razzie/raztracer/custom/dwarf/op"
 	"github.com/razzie/raztracer/common"
+	"github.com/razzie/raztracer/custom/dwarf/op"
 )
 
 // FunctionEntry contains debug information about a function
@@ -19,7 +19,24 @@ type FunctionEntry struct {
 }
 
 // NewFunctionEntry returns a new FunctionEntry
-func NewFunctionEntry(pc uintptr, data *DebugData) (*FunctionEntry, error) {
+func NewFunctionEntry(de DebugEntry, staticBase uintptr) (*FunctionEntry, error) {
+	name := de.Name()
+
+	if de.entry.Tag != dwarf.TagSubprogram {
+		return nil, common.Errorf("%s is not a function entry", name)
+	}
+
+	return &FunctionEntry{
+		entry:      de,
+		Name:       name,
+		HighPC:     de.HighPC(),
+		LowPC:      de.LowPC(),
+		StaticBase: staticBase,
+	}, nil
+}
+
+// NewFunctionEntryFromPC returns a new FunctionEntry from program counter
+func NewFunctionEntryFromPC(pc uintptr, data *DebugData) (*FunctionEntry, error) {
 	reader := data.dwarfData.Reader()
 
 	for entry, err := reader.Next(); entry != nil; entry, err = reader.Next() {
@@ -53,7 +70,7 @@ func NewFunctionEntry(pc uintptr, data *DebugData) (*FunctionEntry, error) {
 		}
 	}
 
-	return nil, common.Errorf("the entry is not a function at pc: %d", pc)
+	return nil, common.Errorf("the entry is not a function at pc: %#x", pc)
 }
 
 // NewLibFunctionEntry returns a dummy FunctionEntry for a library function

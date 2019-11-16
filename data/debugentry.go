@@ -106,3 +106,20 @@ func (de *DebugEntry) Location(attr dwarf.Attr, pc uintptr) (*Location, error) {
 	loc, err := NewLocation(de, attr, pc)
 	return loc, common.Error(err)
 }
+
+// Ranges returns the PC ranges of the entry
+func (de *DebugEntry) Ranges() ([][2]uintptr, error) {
+	rng, err := de.data.dwarfData.Ranges(de.entry)
+	if err != nil {
+		return nil, common.Error(err)
+	}
+
+	ranges := make([][2]uintptr, 0, len(rng))
+	for _, lowhigh := range rng {
+		lowpc := uintptr(lowhigh[0])
+		highpc := uintptr(lowhigh[1])
+		ranges = append(ranges, [2]uintptr{lowpc, highpc})
+	}
+
+	return ranges, nil
+}
