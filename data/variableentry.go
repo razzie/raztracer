@@ -14,13 +14,12 @@ import (
 type VariableEntry struct {
 	entry      DebugEntry
 	staticBase uintptr
-	cfaOffset  uintptr
-	isPtr      bool
+	IsPointer  bool   `json:"-"`
 	Name       string `json:"name"`
 	Type       string `json:"type,omitempty"`
 	Size       int64  `json:"-"`
 	DerefSize  int64  `json:"size,omitempty"`
-	Address    string `json:"address,omitempty"`
+	Location   string `json:"location,omitempty"`
 	Value      string `json:"value,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
@@ -33,7 +32,7 @@ func NewVariableEntry(de DebugEntry) (*VariableEntry, error) {
 
 	var size, derefSize int64
 	var typeName string
-	var isPtr bool
+	var IsPointer bool
 
 	name := de.Name()
 	typ, _ := de.Type()
@@ -42,7 +41,7 @@ func NewVariableEntry(de DebugEntry) (*VariableEntry, error) {
 
 		switch typ.entry.Tag {
 		case dwarf.TagPointerType, dwarf.TagReferenceType:
-			isPtr = true
+			IsPointer = true
 			subtype, _ := typ.Type()
 			if subtype != nil {
 				typeName = subtype.Name() + "*"
@@ -67,7 +66,7 @@ func NewVariableEntry(de DebugEntry) (*VariableEntry, error) {
 	return &VariableEntry{
 		entry:      de,
 		staticBase: de.data.staticBase,
-		isPtr:      isPtr,
+		IsPointer:  IsPointer,
 		Name:       name,
 		Type:       typeName,
 		Size:       size,
@@ -75,24 +74,23 @@ func NewVariableEntry(de DebugEntry) (*VariableEntry, error) {
 	}, nil
 }
 
-// ReadValue updates the current address an value based on PC and registers
+// ReadValue updates the current location and value based on PC and registers
 func (v *VariableEntry) ReadValue(pid int, pc uintptr, regs *op.DwarfRegisters) {
-	v.Address = ""
+	v.Location = ""
 	v.Value = ""
 	v.Error = ""
 
-	if v.Size == 0 && !v.isPtr {
+	if v.Size == 0 && !v.IsPointer {
 		return
 	}
 
 	loc, err := v.entry.Location(dwarf.AttrLocation, pc)
 	if err != nil {
-		addr := uintptr(regs.CFA) + v.cfaOffset
-		loc = &Location{address: addr}
-		v.Address = fmt.Sprintf("no location - assume cfa+%#x", v.cfaOffset)
-	} else {
-		v.Address = loc.String()
+		v.Error = fmt.Sprint(err)
+		return
 	}
+
+	v.Location = loc.String()
 
 	data, err := loc.Read(pid, regs)
 	if err != nil {
@@ -100,7 +98,7 @@ func (v *VariableEntry) ReadValue(pid int, pc uintptr, regs *op.DwarfRegisters) 
 		return
 	}
 
-	if v.isPtr {
+	if v.IsPointer {
 		addr := common.ReadAddress(data)
 		v.Value = fmt.Sprintf("%#x : ", addr)
 

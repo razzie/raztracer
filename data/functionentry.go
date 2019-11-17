@@ -75,7 +75,6 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 
 	vars := make([]*VariableEntry, 0)
 	var errors []error
-	var cfaOffset uintptr
 	var varCount int
 
 	for _, entry := range children {
@@ -93,7 +92,6 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 		}
 
 		varCount++
-		cfaOffset += uintptr(v.Size)
 
 		// do not add return value
 		isret, _ := v.entry.Val(dwarf.AttrVarParam).(bool)
@@ -106,12 +104,6 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 		}
 
 		vars = append(vars, v)
-	}
-
-	// calculating cfaOffsets in backwards order
-	for _, v := range vars {
-		cfaOffset -= uintptr(v.Size)
-		v.cfaOffset = cfaOffset
 	}
 
 	fn.variables = vars
