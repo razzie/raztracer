@@ -2,7 +2,6 @@ package data
 
 import (
 	"debug/dwarf"
-	"fmt"
 
 	"github.com/razzie/raztracer/common"
 	"github.com/razzie/raztracer/custom/dwarf/op"
@@ -87,6 +86,7 @@ func (cu *CUEntry) GetFunctions() ([]*FunctionEntry, error) {
 		return nil, common.Error(err)
 	}
 
+	var errors []error
 	funcs := make([]*FunctionEntry, 0)
 
 	for _, de := range children {
@@ -101,7 +101,7 @@ func (cu *CUEntry) GetFunctions() ([]*FunctionEntry, error) {
 
 		f, err := NewFunctionEntry(de)
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, err)
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (cu *CUEntry) GetFunctions() ([]*FunctionEntry, error) {
 	}
 
 	cu.functions = funcs
-	return funcs, nil
+	return funcs, common.MergeErrors(errors)
 }
 
 // GetGlobals returns the global variable entries that belong to this CU
@@ -123,6 +123,7 @@ func (cu *CUEntry) GetGlobals() ([]*VariableEntry, error) {
 		return nil, common.Error(err)
 	}
 
+	var errors []error
 	lowpc := cu.Ranges[0][0]
 	vars := make([]*VariableEntry, 0)
 
@@ -148,7 +149,7 @@ func (cu *CUEntry) GetGlobals() ([]*VariableEntry, error) {
 
 		v, err := NewVariableEntry(de)
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, err)
 			continue
 		}
 
@@ -160,5 +161,5 @@ func (cu *CUEntry) GetGlobals() ([]*VariableEntry, error) {
 	}
 
 	cu.globals = vars
-	return vars, nil
+	return vars, common.MergeErrors(errors)
 }

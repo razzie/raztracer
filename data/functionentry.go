@@ -74,6 +74,7 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 	}
 
 	vars := make([]*VariableEntry, 0)
+	var errors []error
 	var cfaOffset uintptr
 	var varCount int
 
@@ -84,7 +85,7 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 
 		v, err := NewVariableEntry(entry)
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, err)
 			continue
 		}
 		if v == nil {
@@ -114,7 +115,7 @@ func (fn *FunctionEntry) GetVariables() ([]*VariableEntry, error) {
 	}
 
 	fn.variables = vars
-	return vars, nil
+	return vars, common.MergeErrors(errors)
 }
 
 // GetFrameBase returns the frame base at PC

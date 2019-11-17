@@ -6,7 +6,6 @@ import (
 	"debug/dwarf"
 	"debug/elf"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -53,16 +52,22 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 		functionCache: make(map[uintptr]*FunctionEntry),
 	}
 
+	var errors []error
+
 	// determining dwarf endianness
 	debugInfoData, _, _ := d.GetElfSection("debug_info")
 	if debugInfoData != nil {
 		d.dwarfEndian = frame.DwarfEndian(debugInfoData)
+	} else {
+		errors = append(errors, common.Errorf("failed to determine dwarf endianness"))
 	}
 
-	// reading location list data
+	// reading loclist data
 	loclistData, _, _ := d.GetElfSection("debug_loc")
 	if loclistData != nil {
 		d.loclist = NewLocList(loclistData, d.dwarfEndian)
+	} else {
+		errors = append(errors, common.Errorf("failed to read loclist data"))
 	}
 
 	// reading frame data
@@ -70,6 +75,8 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 	if frameData != nil {
 		frameEntries := frame.Parse(frameData, d.dwarfEndian, uint64(frameDataOffset), uint64(staticBase))
 		d.frameEntries = []frame.FrameDescriptionEntries{frameEntries}
+	} else {
+		errors = append(errors, common.Errorf("failed to read frame data"))
 	}
 
 	// getting the list of compilation unit entries
@@ -83,7 +90,7 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 
 		cuEntry, err := NewCUEntry(DebugEntry{d, cu})
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, common.Error(err))
 			continue
 		}
 
@@ -94,7 +101,7 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 	for _, cu := range d.compUnits {
 		funcs, err := cu.GetFunctions()
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, common.Error(err))
 			continue
 		}
 
@@ -105,14 +112,14 @@ func NewDebugData(file *os.File, staticBase uintptr) (*DebugData, error) {
 	for _, cu := range d.compUnits {
 		globals, err := cu.GetGlobals()
 		if err != nil {
-			fmt.Println(common.Error(err))
+			errors = append(errors, common.Error(err))
 			continue
 		}
 
 		d.globals = append(d.globals, globals...)
 	}
 
-	return d, nil
+	return d, common.MergeErrors(errors)
 }
 
 // GetEntryPoint returns the entry point PC or 0 if not found

@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"runtime"
+	"strings"
 )
 
 // TracedError contains an error and the list of origin frames
@@ -51,6 +52,23 @@ func Error(e interface{}) *TracedError {
 func Errorf(format string, args ...interface{}) *TracedError {
 	return &TracedError{
 		Err:    fmt.Errorf(format, args...),
+		Frames: []runtime.Frame{getLastFrame()},
+	}
+}
+
+// MergeErrors merges multiple errors into a single TracedError
+func MergeErrors(errors []error) *TracedError {
+	if len(errors) == 0 {
+		return nil
+	}
+
+	str := make([]string, 0, len(errors))
+	for _, err := range errors {
+		str = append(str, fmt.Sprint(err))
+	}
+
+	return &TracedError{
+		Err:    fmt.Errorf("%s", strings.Join(str, "; ")),
 		Frames: []runtime.Frame{getLastFrame()},
 	}
 }

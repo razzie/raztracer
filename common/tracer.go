@@ -104,23 +104,25 @@ func (t *Tracer) Detach() error {
 		return Error(err)
 	}
 
+	var errors []error
+
 	for _, tid := range threads {
 		err := Error(tid.Interrupt())
 		if err != nil {
-			fmt.Println(err)
+			errors = append(errors, Error(err))
 		}
 
 		t.tid = tid
 		err = Error(t.stepOverBreakpoint())
 		if err != nil {
-			fmt.Println(err)
+			errors = append(errors, Error(err))
 		}
 	}
 
 	for _, bp := range t.breakpoints {
 		err := Error(bp.Disable())
 		if err != nil {
-			fmt.Println(err)
+			errors = append(errors, Error(err))
 		}
 	}
 
@@ -130,11 +132,11 @@ func (t *Tracer) Detach() error {
 	for _, tid := range threads {
 		err := Error(tid.Detach())
 		if err != nil {
-			fmt.Println(err)
+			errors = append(errors, Error(err))
 		}
 	}
 
-	return nil
+	return MergeErrors(errors)
 }
 
 // GetPC gets the program counter
@@ -195,11 +197,6 @@ func (t *Tracer) GetRegisters() (map[string]string, error) {
 	return regMap, nil
 }
 
-// ReadMemory reads the process' memory to the given buffer
-func (t *Tracer) ReadMemory(addr uintptr, out []byte) error {
-	return t.tid.PeekData(addr, out)
-}
-
 // GetBacktrace gets the list of backtrace frames of the process
 func (t *Tracer) GetBacktrace(maxFrames int) ([]*data.BacktraceFrame, error) {
 	frames := make([]*data.BacktraceFrame, 0)
@@ -211,7 +208,6 @@ func (t *Tracer) GetBacktrace(maxFrames int) ([]*data.BacktraceFrame, error) {
 	for i := 0; stack.Next() && i < maxFrames; i++ {
 		frame, err := stack.Frame()
 		if err != nil {
-			fmt.Println(Error(err))
 			return frames, Error(err)
 		}
 
@@ -257,42 +253,8 @@ func (t *Tracer) continueExecution() error {
 	return nil
 }
 
-// RemoveBreakpoint removes the breakpoint at the given address
-func (t *Tracer) RemoveBreakpoint(addr uintptr) error {
-	var err error
-	bp, found := t.breakpoints[addr]
-
-	if found {
-		if bp.IsEnabled() {
-			//bp.pid = t.tid
-			err = Error(bp.Disable())
-		}
-		delete(t.breakpoints, addr)
-	}
-
-	return err
-}
-
-// SetBreakpointAtFunction sets a breakpoint at the given function
-func (t *Tracer) SetBreakpointAtFunction(name string, exact bool) ([]uintptr, error) {
-	addresses := t.debugData.GetFunctionAddresses(name, exact)
-
-	if len(addresses) == 0 {
-		return nil, Errorf("function not found: %s", name)
-	}
-
-	for i, addr := range addresses {
-		err := t.SetBreakpointAtAddress(addr)
-		if err != nil {
-			return addresses[:i], Error(err)
-		}
-	}
-
-	return addresses, nil
-}
-
-// SetBreakpointAtAddress sets a breakpoint at the given address
-func (t *Tracer) SetBreakpointAtAddress(addr uintptr) error {
+// SetBreakpoint sets a breakpoint at the given address
+func (t *Tracer) SetBreakpoint(addr uintptr) error {
 	_, exists := t.breakpoints[addr]
 	if exists {
 		return Errorf("breakpoint already exists %#x", addr)
@@ -308,8 +270,22 @@ func (t *Tracer) SetBreakpointAtAddress(addr uintptr) error {
 	return nil
 }
 
-func (t *Tracer) singleStepInstruction() error {
-	return Error(t.tid.SingleStep())
+// RemoveBreakpoint removes the breakpoint at the given address
+func (t *Tracer) RemoveBreakpoint(addr uintptr) error {
+	bp, found := t.breakpoints[addr]
+
+	if found {
+		if bp.IsEnabled() {
+			//bp.pid = t.tid
+			err := bp.Disable()
+			if err != nil {
+				return Error(err)
+			}
+		}
+		delete(t.breakpoints, addr)
+	}
+
+	return nil
 }
 
 func (t *Tracer) stepOverBreakpoint() error {
@@ -328,7 +304,7 @@ func (t *Tracer) stepOverBreakpoint() error {
 		}
 
 		for {
-			err = t.singleStepInstruction()
+			err = t.tid.SingleStep()
 			if err != nil {
 				return Error(err)
 			}
@@ -359,14 +335,15 @@ func (t *Tracer) Run() error {
 		return Error(err)
 	}
 
+	var errors []error
 	for _, tid := range threads {
 		err := tid.Cont()
 		if err != nil {
-			return Error(err)
+			errors = append(errors, err)
 		}
 	}
 
-	return nil
+	return MergeErrors(errors)
 }
 
 // Interrupt interrupts the process to be able to set breakpoints
@@ -376,14 +353,15 @@ func (t *Tracer) Interrupt() error {
 		return Error(err)
 	}
 
+	var errors []error
 	for _, tid := range threads {
 		err := tid.Interrupt()
 		if err != nil {
-			return Error(err)
+			errors = append(errors, err)
 		}
 	}
 
-	return nil
+	return MergeErrors(errors)
 }
 
 // WaitForEvent blocks until a trace event happens, then returns it
