@@ -11,15 +11,21 @@ import (
 
 // Reading contains the PC dependent location and value of a variable
 type Reading struct {
-	Variable *VariableEntry `json:"variable"`
-	Location string         `json:"location"`
-	Value    string         `json:"value"`
-	Error    string         `json:"error"`
+	Name     string `json:"name"`
+	Type     string `json:"type,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+	Location string `json:"location"`
+	Value    string `json:"value"`
+	Error    string `json:"error"`
 }
 
 // NewReading returns a new Reading
 func NewReading(v *VariableEntry, pid int, pc uintptr, regs *op.DwarfRegisters) (*Reading, error) {
-	r := &Reading{}
+	r := &Reading{
+		Name: v.Name,
+		Type: v.Type,
+		Size: v.DerefSize,
+	}
 
 	loc, data, err := v.GetValue(pid, pc, regs)
 	if loc != nil {
@@ -80,10 +86,10 @@ func GetReadings(pid int, pc uintptr, regs *op.DwarfRegisters, vars ...*Variable
 // String returns the variable reading as a string
 func (r *Reading) String() string {
 	if r.Value == "" {
-		return r.Variable.Name
+		return r.Name
 	}
 
-	return r.Variable.Name + "=" + strings.Split(r.Value, "\n")[0]
+	return r.Name + "=" + strings.Split(r.Value, "\n")[0]
 }
 
 func isStringType(typeName string) bool {
