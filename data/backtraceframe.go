@@ -11,9 +11,10 @@ import (
 
 // BacktraceFrame contains the name and variables of a function in the backtrace
 type BacktraceFrame struct {
-	Name      string    `json:"function"`
-	Address   string    `json:"address"`
-	Position  string    `json:"position"`
+	fn        *FunctionEntry
+	Function  string    `json:"function"`
+	Source    string    `json:"source"`
+	PC        string    `json:"pc"`
 	CFA       string    `json:"cfa"`
 	FrameBase string    `json:"framebase"`
 	Variables []Reading `json:"variables"`
@@ -26,34 +27,22 @@ func NewBacktraceFrame(pid int, fn *FunctionEntry, pc uintptr, regs *op.DwarfReg
 		return nil, common.Error(err)
 	}
 
-	values := make([]Reading, 0, len(vars))
-	for _, v := range vars {
-		val, _ := NewReading(v, pid, pc, regs)
-		if val != nil {
-			values = append(values, *val)
-		}
-	}
+	values, err := GetReadings(pid, pc, regs, vars...)
 
-	debugData := fn.entry.data
-	addr := fmt.Sprintf("%#x", fn.LowPC)
-	position := fmt.Sprintf("%#x", pc)
-
-	if debugData != nil {
-		lineEntry, _ := NewLineEntry(pc, debugData)
+	source := fmt.Sprintf("%#x (no debug info)", pc)
+	if fn.entry.data != nil {
+		lineEntry, _ := NewLineEntry(pc, fn.entry.data)
 		if lineEntry != nil {
 			filename := path.Base(lineEntry.Filename)
-			position += fmt.Sprintf(" %s:%d", filename, lineEntry.Line)
+			source = fmt.Sprintf("%s:%d", filename, lineEntry.Line)
 		}
-	}
-
-	if fn.StaticBase > 0 {
-		addr += fmt.Sprintf(" (%#x)", fn.LowPC+fn.StaticBase)
 	}
 
 	return &BacktraceFrame{
-		Name:      fn.Name,
-		Address:   addr,
-		Position:  position,
+		fn:        fn,
+		Function:  fmt.Sprintf("%s (%#x+%#x)", fn.Name, fn.LowPC, fn.StaticBase),
+		Source:    source,
+		PC:        fmt.Sprintf("%#x", pc),
 		CFA:       fmt.Sprintf("%#x", regs.CFA),
 		FrameBase: fmt.Sprintf("%#x", regs.FrameBase),
 		Variables: values,
@@ -63,12 +52,12 @@ func NewBacktraceFrame(pid int, fn *FunctionEntry, pc uintptr, regs *op.DwarfReg
 // String returns the backtrace frame as a string
 func (bt *BacktraceFrame) String() string {
 	if len(bt.Variables) == 0 {
-		return bt.Name + "()"
+		return bt.fn.Name + "()"
 	}
 
 	vars := make([]string, len(bt.Variables))
 	for i, v := range bt.Variables {
 		vars[i] = v.String()
 	}
-	return fmt.Sprintf("%s(%s)", bt.Name, strings.Join(vars, ","))
+	return fmt.Sprintf("%s(%s)", bt.fn.Name, strings.Join(vars, ","))
 }

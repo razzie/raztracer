@@ -62,6 +62,21 @@ func NewReading(v *VariableEntry, pid int, pc uintptr, regs *op.DwarfRegisters) 
 
 }
 
+// GetReadings returns returns variable readings
+func GetReadings(pid int, pc uintptr, regs *op.DwarfRegisters, vars ...*VariableEntry) ([]Reading, error) {
+	var errors []error
+	readings := make([]Reading, 0, len(vars))
+	for _, v := range vars {
+		r, err := NewReading(v, pid, pc, regs)
+		if err != nil {
+			errors = append(errors, err)
+		} else {
+			readings = append(readings, *r)
+		}
+	}
+	return readings, common.MergeErrors(errors)
+}
+
 // String returns the variable reading as a string
 func (r *Reading) String() string {
 	if r.Value == "" {

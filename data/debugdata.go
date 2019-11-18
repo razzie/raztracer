@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/razzie/raztracer/common"
@@ -246,6 +247,21 @@ func (d *DebugData) GetFunctionsByName(name string, exact bool) (results []*Func
 		}
 
 		results = append(results, fn)
+	}
+	return
+}
+
+// GetFunctionsByNameRegexp returns function entries by regexp search
+func (d *DebugData) GetFunctionsByNameRegexp(pattern string) (results []*FunctionEntry, err error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return
+	}
+
+	for _, fn := range d.functions {
+		if re.MatchString(fn.Name) {
+			results = append(results, fn)
+		}
 	}
 	return
 }

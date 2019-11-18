@@ -226,15 +226,8 @@ func (t *Tracer) GetGlobals() ([]data.Reading, error) {
 		return nil, Error(err)
 	}
 
-	values := make([]data.Reading, 0, len(vars))
-	for _, v := range vars {
-		val, _ := data.NewReading(v, int(t.pid), 0, regs)
-		if val != nil {
-			values = append(values, *val)
-		}
-	}
-
-	return values, nil
+	values, err := data.GetReadings(int(t.pid), 0, regs, vars...)
+	return values, Error(err)
 }
 
 func (t *Tracer) continueExecution() error {
