@@ -11,12 +11,12 @@ import (
 
 // BacktraceFrame contains the name and variables of a function in the backtrace
 type BacktraceFrame struct {
-	Name      string           `json:"function"`
-	Address   string           `json:"address"`
-	Position  string           `json:"position"`
-	CFA       string           `json:"cfa"`
-	FrameBase string           `json:"framebase"`
-	Variables []*VariableEntry `json:"variables"`
+	Name      string    `json:"function"`
+	Address   string    `json:"address"`
+	Position  string    `json:"position"`
+	CFA       string    `json:"cfa"`
+	FrameBase string    `json:"framebase"`
+	Variables []Reading `json:"variables"`
 }
 
 // NewBacktraceFrame returns a new BacktraceFrame
@@ -26,8 +26,12 @@ func NewBacktraceFrame(pid int, fn *FunctionEntry, pc uintptr, regs *op.DwarfReg
 		return nil, common.Error(err)
 	}
 
+	values := make([]Reading, 0, len(vars))
 	for _, v := range vars {
-		v.ReadValue(pid, pc, regs)
+		val, _ := NewReading(v, pid, pc, regs)
+		if val != nil {
+			values = append(values, *val)
+		}
 	}
 
 	debugData := fn.entry.data
@@ -52,7 +56,8 @@ func NewBacktraceFrame(pid int, fn *FunctionEntry, pc uintptr, regs *op.DwarfReg
 		Position:  position,
 		CFA:       fmt.Sprintf("%#x", regs.CFA),
 		FrameBase: fmt.Sprintf("%#x", regs.FrameBase),
-		Variables: vars}, nil
+		Variables: values,
+	}, nil
 }
 
 // String returns the backtrace frame as a string

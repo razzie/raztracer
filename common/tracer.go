@@ -218,7 +218,7 @@ func (t *Tracer) GetBacktrace(maxFrames int) ([]*data.BacktraceFrame, error) {
 }
 
 // GetGlobals returns the list of global variables
-func (t *Tracer) GetGlobals() ([]*data.VariableEntry, error) {
+func (t *Tracer) GetGlobals() ([]data.Reading, error) {
 	vars := t.debugData.GetGlobals()
 
 	regs, err := GetDwarfRegs(t.tid)
@@ -226,11 +226,15 @@ func (t *Tracer) GetGlobals() ([]*data.VariableEntry, error) {
 		return nil, Error(err)
 	}
 
+	values := make([]data.Reading, 0, len(vars))
 	for _, v := range vars {
-		v.ReadValue(int(t.tid), 0, regs)
+		val, _ := data.NewReading(v, int(t.pid), 0, regs)
+		if val != nil {
+			values = append(values, *val)
+		}
 	}
 
-	return vars, nil
+	return values, nil
 }
 
 func (t *Tracer) continueExecution() error {
