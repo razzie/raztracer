@@ -34,7 +34,13 @@ func (theme *Theme) Apply() {
 	tview.Styles.GraphicsColor = tview.Styles.PrimaryTextColor
 }
 
-var currentTheme *Theme
+var currentTheme = &LightTheme
+
+// Themes contains the string-to-theme map
+var Themes = map[string]*Theme{
+	"dark":  &DarkTheme,
+	"light": &LightTheme,
+}
 
 // DarkTheme represents a dark theme
 var DarkTheme = Theme{
